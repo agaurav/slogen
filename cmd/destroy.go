@@ -16,15 +16,15 @@ limitations under the License.
 package cmd
 
 import (
+	"fmt"
 	"github.com/SumoLogic-Incubator/slogen/libs"
-	"github.com/fatih/color"
+	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
-	"strings"
 )
 
-// validateCmd represents the validate command
-var validateCmd = &cobra.Command{
-	Use:   "validate [list of paths to openslo configs]",
+// destroyCmd represents the destroy command
+var destroyCmd = &cobra.Command{
+	Use:   "destroy",
 	Short: "A brief description of your command",
 	Long: `A longer description that spans multiple lines and likely contains examples
 and usage of using your command. For example:
@@ -32,48 +32,65 @@ and usage of using your command. For example:
 Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
-	Example: "slogen validate service/search.yaml \nslogen validate ~/team-a/slo/ ~/team-b/slo ~/core/slo/login.yaml",
-	Args:    cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-
-		color.Blue("validate called on %s", strings.Join(args, ", "))
-		if len(args) < 1 {
-			color.Red("no arguments provided")
-			cmd.Help()
+		//libs.BadInfo("Resource that will be destroyed\n\n")
+		outDir, err := cmd.Flags().GetString(FlagOutDirLong)
+		if err != nil {
+			libs.BadResult("Unable to run destroy \nerror : %s\n", err.Error())
 			return
 		}
 
-		ie, err := cmd.Flags().GetBool(FlagIgnoreErrorLong)
+		err = libs.TFExec(outDir, libs.TFPlanDestroy)
 
 		if err != nil {
-			color.Red("error parsing ignore flag", err)
+			libs.BadResult("\nunable to run destroy : %s\n", err.Error())
+			return
 		}
 
-		if ie {
-			color.HiCyan("ignoring errors")
+		fmt.Printf("\n\n")
+
+		if destroyPrompt(outDir) {
+			libs.TFExec(outDir, libs.TFDestroy)
 		}
 
-		for _, path := range args {
-			libs.ParseDir(path, ie)
-		}
 	},
 }
 
-const FlagIgnoreErrorLong = "ignoreErrors"
-const FlagIgnoreErrorShort = "i"
-
 func init() {
-	rootCmd.AddCommand(validateCmd)
-
+	rootCmd.AddCommand(destroyCmd)
+	destroyCmd.Flags().StringP(FlagOutDirLong, FlagOutDirShort, "tf",
+		"output directory where to apply step was executed",
+	)
 	// Here you will define your flags and configuration settings.
 
 	// Cobra supports Persistent Flags which will work for this command
 	// and all subcommands, e.g.:
-	// validateCmd.PersistentFlags().String("foo", "", "A help for foo")
+	// destroyCmd.PersistentFlags().String("foo", "", "A help for foo")
 
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
-	validateCmd.Flags().BoolP(FlagIgnoreErrorLong, FlagIgnoreErrorShort, false,
-		"whether to continue validation even after encountering errors",
-	)
+	// destroyCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+}
+
+const destroyYesOption = "Yes, run destroy."
+const destroyNoOption = "No, cancel it."
+
+func destroyPrompt(outDir string) bool {
+	prompt := promptui.Select{
+		Label: "Are you sure to delete the dashboards, views and monitor generated at : " + outDir,
+		Items: []string{destroyNoOption, destroyYesOption},
+	}
+
+	_, result, err := prompt.Run()
+
+	if err != nil {
+		libs.BadInfo("Prompt failed %v\n", err)
+		return false
+	}
+
+	if result == destroyYesOption {
+		return true
+	}
+
+	return false
 }
